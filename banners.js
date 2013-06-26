@@ -19,6 +19,9 @@ easyBanners = {
     // stores current DOM nodes on the page that should host banners
     _map: {areas:{}, keys:[]},
 
+    // contain ids of displayed banners
+    _idCounter: [],
+
     // setups handlers for dom loaded event
     init: function(ready){
         var that = this;
@@ -61,9 +64,9 @@ easyBanners = {
             }
 
             if(!this._map.areas[area]){
-                this._map.areas[area] = [areas[i]];
+                this._map.areas[area] = [{node: areas[i]}];
             }else{
-                this._map.areas[area].push(areas[i]);
+                this._map.areas[area].push({node: areas[i]});
             }
         }
 
@@ -83,6 +86,9 @@ easyBanners = {
     // load banners from the server, required banners are defined by used "areas"
     loadBanners: function(){
         var queryParams = [], page, that = this;
+
+        // reset id counter
+        this._idCounter = [];
 
         queryParams.push("url="+encodeURIComponent(window.location.href));
 
@@ -115,16 +121,29 @@ easyBanners = {
                     if(!banners[key].length){
                         break;
                     }
-                    this.setupBanner(this._map.areas[key][j], banners[key].shift());
+                    this._map.areas[key][j].banner = banners[key].shift();
+                    this.setupBanner(this._map.areas[key][j]);
                 }
             }
+        }
+
+        // if there is something to count, send the info to the server
+        if(this._idCounter.length){
+            var url = AD_HOST + "/counter.php?url="+encodeURIComponent(window.location.href)+"count=" + this._idCounter.join(",");
+            this.jsonp(url, function(err, success){
+
+            });
         }
     },
 
     // checks if an handler exists for selected banner and runs it
-    setupBanner: function(element, banner){
-        if(banner.id && this._handlers[banner.type]){
-            return new this._handlers[banner.type](element, banner);
+    setupBanner: function(element){
+        var handler;
+        if(element && element.banner && element.banner.id && this._handlers[element.banner.type]){
+            handler =  new this._handlers[element.banner.type](element);
+            if(handler.paint()){
+                this._idCounter.push(element.banner.id);
+            }
         }
     },
 
@@ -205,6 +224,10 @@ easyBanners = {
             funcName = "returnFunc" + (++this._funcCounter),
             completed = false;
 
+        if(!callback){
+            callback = function(){};
+        }
+
         url += (url.match(/\?/) ? "&" : "?") + "jsonp=" + encodeURIComponent("easyBanners._funcs." + funcName) + "&t=" + (+new Date());
 
         easyBanners._funcs[funcName] = function(payload){
@@ -243,15 +266,35 @@ easyBanners = {
 }
 
 // Example handler for "image"
-function ImageHandler(element, options){
-    this.options = options;
-    var img = document.createElement("img");
-    img.src = options.src;
-    img.setAttribute("width", options.width);
-    img.setAttribute("height", options.height);
-    element.innerHTML = "";
-    element.appendChild(img);
+function ImageHandler(element){
+
+    this.element = element;
+
+    if(this.element.handler){
+        this.element.handler.clear();
+    }
+    this.element.node.innerHTML = "";
+
+    this.element.handler = this;
+
 }
+
+// if returns true, the banner was shown and should be counted
+ImageHandler.prototype.paint = function(){
+    var img = document.createElement("img");
+    img.setAttribute("src", this.element.banner.src);
+    img.setAttribute("width", this.element.banner.width);
+    img.setAttribute("height", this.element.banner.height);
+
+    this.element.node.appendChild(img);
+
+    return true;
+}
+
+ImageHandler.prototype.clear = function(){
+    // removes banner
+}
+
 easyBanners._handlers["image"] = ImageHandler;
 
 // start
